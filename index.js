@@ -1,22 +1,38 @@
 // server.js
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-const Joi = require('joi'); // validation library
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const Joi = require("joi");
 
 const app = express();
 
-// ------------------- CONFIG -------------------
-// Allowed frontend origin for CORS
-const allowedOrigin = process.env.FRONTEND_URL || 'https://clint-fornt.vercel.app'||'http://localhost:5173';
+// ------------------- CORS FIXED -------------------
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "https://clint-fornt.vercel.app",
+  "http://localhost:5173"
+];
 
-app.use(cors({ origin: allowedOrigin }));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow server-to-server or tools without origin
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log("❌ CORS BLOCKED:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+  })
+);
 
 app.use(express.json());
 
 // ------------------- MONGODB CONNECTION -------------------
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.i76ih3i.mongodb.net/?appName=Cluster0`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.i76ih3i.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -27,24 +43,29 @@ const client = new MongoClient(uri, {
 
 let collection;
 
-// Connect to MongoDB
+// CONNECT FUNCTION
 async function connectDB() {
   try {
     await client.connect();
-    const db = client.db('companywork');
-    collection = db.collection('selfData');
-    console.log('✅ Connected to MongoDB!');
+
+    // Ensure connection is alive
+    await client.db("admin").command({ ping: 1 });
+
+    const db = client.db("companywork");
+    collection = db.collection("selfData");
+
+    console.log("✅ Connected to MongoDB!");
   } catch (err) {
-    console.error('❌ MongoDB connection failed:', err);
-    process.exit(1); // stop server if DB fails
+    console.error("❌ MongoDB connection failed:", err);
+    process.exit(1);
   }
 }
 
-// ------------------- VALIDATION SCHEMAS -------------------
+// ------------------- VALIDATION -------------------
 const dataSchema = Joi.object({
-  facebookPage: Joi.string().optional(),
+  facebookPage: Joi.string().allow("").optional(),
   facebookFollowers: Joi.number().optional(),
-  linkedin: Joi.string().optional(),
+  linkedin: Joi.string().allow("").optional(),
   websiteExists: Joi.boolean().optional(),
   successRate: Joi.number().optional(),
   problems: Joi.array().items(Joi.string()).optional(),
@@ -53,97 +74,103 @@ const dataSchema = Joi.object({
 
 // ------------------- ROUTES -------------------
 
-// Root
-app.get('/', (req, res) => {
-  res.send('Clint data server is running');
+// Root Route
+app.get("/", (req, res) => {
+  res.send("Clint data server is running");
 });
 
 // GET all data
-app.get('/data', async (req, res) => {
+app.get("/data", async (req, res) => {
   try {
     const docs = await collection.find({}).toArray();
     res.json(docs);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fetch data' });
+    res.status(500).json({ error: "Failed to fetch data" });
   }
 });
 
-// GET single document
-app.get('/data/:id', async (req, res) => {
+// GET single data
+app.get("/data/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid ID' });
-    }
+    if (!ObjectId.isValid(id))
+      return res.status(400).json({ error: "Invalid ID" });
 
     const doc = await collection.findOne({ _id: new ObjectId(id) });
-    if (!doc) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
+
+    if (!doc) return res.status(404).json({ error: "Document not found" });
 
     res.json(doc);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch document' });
+    res.status(500).json({ error: "Failed to fetch document" });
   }
 });
 
 // CREATE new document
-app.post('/data', async (req, res) => {
+app.post("/data", async (req, res) => {
   try {
     const { error, value } = dataSchema.validate(req.body);
-    if (error) return res.status(400).json({ error: error.details[0].message });
+    if (error)
+      return res.status(400).json({ error: error.details[0].message });
 
     const result = await collection.insertOne(value);
     res.status(201).json(result);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to insert document' });
+    res.status(500).json({ error: "Failed to insert document" });
   }
 });
 
 // DELETE document
-app.delete('/data/:id', async (req, res) => {
+app.delete("/data/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
+    if (!ObjectId.isValid(id))
+      return res.status(400).json({ error: "Invalid ID" });
 
     const result = await collection.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) return res.status(404).json({ error: 'Document not found' });
 
-    res.json({ message: 'Document deleted successfully' });
+    if (result.deletedCount === 0)
+      return res.status(404).json({ error: "Document not found" });
+
+    res.json({ message: "Document deleted successfully" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to delete document' });
+    res.status(500).json({ error: "Failed to delete document" });
   }
 });
 
-// UPDATE document
-app.put('/data/update/:id', async (req, res) => {
+// UPDATE document (Frontend route matches)
+app.put("/data/update/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+    if (!ObjectId.isValid(id))
+      return res.status(400).json({ error: "Invalid ID" });
 
     const { error, value } = dataSchema.validate(req.body);
-    if (error) return res.status(400).json({ error: error.details[0].message });
+    if (error)
+      return res.status(400).json({ error: error.details[0].message });
 
     const result = await collection.updateOne(
       { _id: new ObjectId(id) },
       { $set: value }
     );
 
-    if (result.matchedCount === 0) return res.status(404).json({ error: 'Document not found' });
+    if (result.matchedCount === 0)
+      return res.status(404).json({ error: "Document not found" });
 
-    res.json({ message: 'Document updated successfully', modifiedCount: result.modifiedCount });
+    res.json({
+      message: "Document updated successfully",
+      modifiedCount: result.modifiedCount,
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to update document' });
+    res.status(500).json({ error: "Failed to update document" });
   }
 });
 
 // ------------------- START SERVER -------------------
 const PORT = process.env.PORT || 3000;
+
 connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
