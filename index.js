@@ -9,7 +9,7 @@ const app = express();
 
 // ------------------- CONFIG -------------------
 // Allowed frontend origin for CORS
-const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:5174';
+const allowedOrigin = process.env.FRONTEND_URL || 'https://clint-fornt.vercel.app';
 app.use(cors({ origin: allowedOrigin }));
 
 app.use(express.json());
