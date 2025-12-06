@@ -10,26 +10,14 @@ const app = express();
 // ------------------- CORS সেটআপ -------------------
 // এখানে frontend URL গুলো add করো
 const allowedOrigins = [
-  process.env.FRONTEND_URL,             // যদি তুমি .env এ FRONTEND_URL রাখো
-  "https://clint-fornt.vercel.app",     // তোমার Vercel frontend
-  "https://clint-fornt.vercel.app/",    // শেষের / দিয়েও add করা
+  process.env.FRONTEND_URL,             // যদি তুমি .env এ FRONTEND_URL রাখ    // তোমার Vercel frontend
+  "https://clint-fornt.vercel.app",    // শেষের / দিয়েও add করা
   "http://localhost:5173",            // local dev
-  "https://clint-fornt.vercel.app/table",
-  "https://clint-fornt.vercel.app/add"
-
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Postman বা server থেকে direct request আসলে origin null হয়, তাই allow করি
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log("❌ CORS BLOCKED:", origin);
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true // যদি cookie/session থাকে
+  origin: allowedOrigins,
+  credentials:true
 }));
 
 // JSON request handle করার জন্য
