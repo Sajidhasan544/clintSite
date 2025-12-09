@@ -58,16 +58,17 @@ async function connectDB() {
 }
 
 // ==================== VALIDATION ====================
+// ✔️ Only Company_Name required
+// ✔️ All other fields optional + allow("")
 const dataSchema = Joi.object({
-  // New Company Fields (REQUIRED)
   Company_Name: Joi.string().required(),
-  Contact_Person: Joi.string().required(),
-  Contact_Number: Joi.string().required(),
-  Mail: Joi.string().email().required(),
-  Address: Joi.string().required(),
+
+  Contact_Person: Joi.string().allow("").optional(),
+  Contact_Number: Joi.string().allow("").optional(),
+  Mail: Joi.string().allow("").optional(),
+  Address: Joi.string().allow("").optional(),
   Support_Person: Joi.string().allow("").optional(),
-  
-  // Old Social Media Fields (OPTIONAL)
+
   facebookPage: Joi.string().allow("").optional(),
   facebookFollowers: Joi.number().optional(),
   linkedin: Joi.string().allow("").optional(),
@@ -75,8 +76,7 @@ const dataSchema = Joi.object({
   successRate: Joi.number().optional(),
   problems: Joi.array().items(Joi.string()).optional(),
   solutions: Joi.array().items(Joi.string()).optional(),
-  
-  // Timestamps
+
   createdAt: Joi.date().optional(),
   updatedAt: Joi.date().optional()
 });
@@ -99,10 +99,8 @@ app.get("/data", async (req, res) => {
     console.log("📦 Fetching all data...");
     const docs = await collection.find({}).toArray();
     
-    // Transform data to include both old and new fields
     const transformedData = docs.map(doc => ({
       ...doc,
-      // Ensure frontend expected fields exist
       _id: doc._id,
       Company_Name: doc.Company_Name || doc.facebookPage || "",
       Contact_Person: doc.Contact_Person || doc.linkedin || "",
@@ -161,7 +159,7 @@ app.get("/data/:id", async (req, res) => {
   }
 });
 
-// CREATE new document
+// CREATE
 app.post("/data", async (req, res) => {
   try {
     console.log("➕ Creating new document:", req.body);
@@ -174,7 +172,6 @@ app.post("/data", async (req, res) => {
       });
     }
 
-    // Add timestamps
     const dataToInsert = {
       ...value,
       createdAt: new Date(),
@@ -192,14 +189,14 @@ app.post("/data", async (req, res) => {
   } catch (err) {
     console.error("❌ POST /data error:", err);
     res.status(500).json({ 
-      success: false, 
+      success: false,
       error: "Failed to save data",
       details: err.message 
     });
   }
 });
 
-// UPDATE document
+// UPDATE
 app.put("/data/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -242,13 +239,13 @@ app.put("/data/:id", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ 
-      success: false, 
+      success: false,
       error: "Failed to update document" 
     });
   }
 });
 
-// DELETE document
+// DELETE
 app.delete("/data/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -273,13 +270,13 @@ app.delete("/data/:id", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ 
-      success: false, 
+      success: false,
       error: "Failed to delete document" 
     });
   }
 });
 
-// SEARCH companies
+// SEARCH
 app.get("/search", async (req, res) => {
   try {
     const { q } = req.query;
@@ -338,7 +335,7 @@ app.get("/test", async (req, res) => {
   }
 });
 
-// BULK insert (for testing)
+// BULK insert
 app.post("/data/bulk", async (req, res) => {
   try {
     const { companies } = req.body;
@@ -350,7 +347,6 @@ app.post("/data/bulk", async (req, res) => {
       });
     }
 
-    // Validate each company
     const validatedCompanies = [];
     for (const company of companies) {
       const { error, value } = dataSchema.validate(company);
