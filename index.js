@@ -7,28 +7,19 @@ const Joi = require("joi");
 
 const app = express();
 
-// ==================== CORS FIX ====================
-// Option 1: সবাইকে allow (সর্বোচ্চ সহজ)
+// ==================== CORS ====================
 app.use(cors({
-  origin: "*",  // সবাইকে access দিলে
+  origin: "*",
   credentials: false,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Option 2: শুধু তোমার frontend (প্রোডাকশন)
-// app.use(cors({
-//   origin: "https://clint-forntend.vercel.app",
-//   credentials: true
-// }));
-
-// CORS headers manually
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   
-  // Handle preflight
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
@@ -36,7 +27,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// JSON parser
 app.use(express.json());
 
 // ==================== MONGODB ====================
@@ -69,6 +59,15 @@ async function connectDB() {
 
 // ==================== VALIDATION ====================
 const dataSchema = Joi.object({
+  // New Company Fields (REQUIRED)
+  Company_Name: Joi.string().required(),
+  Contact_Person: Joi.string().required(),
+  Contact_Number: Joi.string().required(),
+  Mail: Joi.string().email().required(),
+  Address: Joi.string().required(),
+  Support_Person: Joi.string().allow("").optional(),
+  
+  // Old Social Media Fields (OPTIONAL)
   facebookPage: Joi.string().allow("").optional(),
   facebookFollowers: Joi.number().optional(),
   linkedin: Joi.string().allow("").optional(),
@@ -76,6 +75,10 @@ const dataSchema = Joi.object({
   successRate: Joi.number().optional(),
   problems: Joi.array().items(Joi.string()).optional(),
   solutions: Joi.array().items(Joi.string()).optional(),
+  
+  // Timestamps
+  createdAt: Joi.date().optional(),
+  updatedAt: Joi.date().optional()
 });
 
 // ==================== ROUTES ====================
@@ -83,42 +86,58 @@ const dataSchema = Joi.object({
 // Health Check
 app.get("/", (req, res) => {
   res.json({ 
-    message: "Clint data server চলছে 🚀",
+    message: "Company Data Server Running 🚀",
     status: "active",
     cors: "enabled",
     timestamp: new Date().toISOString()
   });
 });
 
-// GET সব data
+// GET ALL data
 app.get("/data", async (req, res) => {
   try {
     console.log("📦 Fetching all data...");
     const docs = await collection.find({}).toArray();
+    
+    // Transform data to include both old and new fields
+    const transformedData = docs.map(doc => ({
+      ...doc,
+      // Ensure frontend expected fields exist
+      _id: doc._id,
+      Company_Name: doc.Company_Name || doc.facebookPage || "",
+      Contact_Person: doc.Contact_Person || doc.linkedin || "",
+      Contact_Number: doc.Contact_Number || "",
+      Mail: doc.Mail || "",
+      Address: doc.Address || "",
+      Support_Person: doc.Support_Person || "",
+      facebookPage: doc.facebookPage || doc.Company_Name || "",
+      linkedin: doc.linkedin || doc.Contact_Person || ""
+    }));
+    
     res.json({
       success: true,
-      count: docs.length,
-      data: docs,
+      count: transformedData.length,
+      data: transformedData,
       timestamp: new Date().toISOString()
     });
   } catch (err) {
     console.error("❌ GET /data error:", err);
     res.status(500).json({ 
       success: false,
-      error: "ডাটা আনা ব্যর্থ হয়েছে",
+      error: "Failed to fetch data",
       details: err.message 
     });
   }
 });
 
-// GET single data
+// GET SINGLE data by ID
 app.get("/data/:id", async (req, res) => {
   try {
     const id = req.params.id;
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ 
         success: false, 
-        error: "অবৈধ ID" 
+        error: "Invalid ID format" 
       });
     }
 
@@ -126,15 +145,18 @@ app.get("/data/:id", async (req, res) => {
     if (!doc) {
       return res.status(404).json({ 
         success: false, 
-        error: "ডকুমেন্ট পাওয়া যায়নি" 
+        error: "Document not found" 
       });
     }
 
-    res.json({ success: true, data: doc });
+    res.json({ 
+      success: true, 
+      data: doc 
+    });
   } catch (err) {
     res.status(500).json({ 
       success: false, 
-      error: "ডকুমেন্ট আনা ব্যর্থ হয়েছে" 
+      error: "Failed to fetch document" 
     });
   }
 });
@@ -152,60 +174,39 @@ app.post("/data", async (req, res) => {
       });
     }
 
-    const result = await collection.insertOne(value);
+    // Add timestamps
+    const dataToInsert = {
+      ...value,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const result = await collection.insertOne(dataToInsert);
+    
     res.status(201).json({
       success: true,
-      message: "ডাটা সফলভাবে সংরক্ষণ হয়েছে",
-      insertedId: result.insertedId
+      message: "Company data saved successfully",
+      insertedId: result.insertedId,
+      data: dataToInsert
     });
   } catch (err) {
     console.error("❌ POST /data error:", err);
     res.status(500).json({ 
       success: false, 
-      error: "ডকুমেন্ট সংরক্ষণ ব্যর্থ হয়েছে" 
-    });
-  }
-});
-
-// DELETE document
-app.delete("/data/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "অবৈধ ID" 
-      });
-    }
-
-    const result = await collection.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "ডকুমেন্ট পাওয়া যায়নি" 
-      });
-    }
-
-    res.json({ 
-      success: true, 
-      message: "ডকুমেন্ট সফলভাবে মুছে ফেলা হয়েছে" 
-    });
-  } catch (err) {
-    res.status(500).json({ 
-      success: false, 
-      error: "ডকুমেন্ট মুছে ফেলা ব্যর্থ হয়েছে" 
+      error: "Failed to save data",
+      details: err.message 
     });
   }
 });
 
 // UPDATE document
-app.put("/data/update/:id", async (req, res) => {
+app.put("/data/:id", async (req, res) => {
   try {
     const id = req.params.id;
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ 
         success: false, 
-        error: "অবৈধ ID" 
+        error: "Invalid ID" 
       });
     }
 
@@ -217,39 +218,185 @@ app.put("/data/update/:id", async (req, res) => {
       });
     }
 
+    const updateData = {
+      ...value,
+      updatedAt: new Date()
+    };
+
     const result = await collection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: value }
+      { $set: updateData }
     );
 
     if (result.matchedCount === 0) {
       return res.status(404).json({ 
         success: false, 
-        error: "ডকুমেন্ট পাওয়া যায়নি" 
+        error: "Document not found" 
       });
     }
 
     res.json({
       success: true,
-      message: "ডকুমেন্ট সফলভাবে আপডেট হয়েছে",
+      message: "Document updated successfully",
       modifiedCount: result.modifiedCount
     });
   } catch (err) {
     res.status(500).json({ 
       success: false, 
-      error: "ডকুমেন্ট আপডেট ব্যর্থ হয়েছে" 
+      error: "Failed to update document" 
     });
   }
 });
 
-// Test route
-app.get("/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "API working perfectly!",
-    cors: "enabled",
-    frontend: "https://clint-forntend.vercel.app",
-    timestamp: new Date().toISOString()
+// DELETE document
+app.delete("/data/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Invalid ID" 
+      });
+    }
+
+    const result = await collection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Document not found" 
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Document deleted successfully" 
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to delete document" 
+    });
+  }
+});
+
+// SEARCH companies
+app.get("/search", async (req, res) => {
+  try {
+    const { q } = req.query;
+    
+    if (!q || q.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        error: "Search query required"
+      });
+    }
+
+    const searchQuery = {
+      $or: [
+        { Company_Name: { $regex: q, $options: "i" } },
+        { Contact_Person: { $regex: q, $options: "i" } },
+        { Contact_Number: { $regex: q, $options: "i" } },
+        { Mail: { $regex: q, $options: "i" } },
+        { Address: { $regex: q, $options: "i" } }
+      ]
+    };
+
+    const results = await collection.find(searchQuery).toArray();
+    
+    res.json({
+      success: true,
+      count: results.length,
+      data: results
+    });
+  } catch (err) {
+    console.error("❌ Search error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Search failed"
+    });
+  }
+});
+
+// TEST endpoint
+app.get("/test", async (req, res) => {
+  try {
+    const count = await collection.countDocuments();
+    
+    res.json({
+      success: true,
+      message: "API is working perfectly!",
+      database: "Connected",
+      totalRecords: count,
+      cors: "enabled",
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: "Database connection failed"
+    });
+  }
+});
+
+// BULK insert (for testing)
+app.post("/data/bulk", async (req, res) => {
+  try {
+    const { companies } = req.body;
+    
+    if (!Array.isArray(companies) || companies.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Companies array required"
+      });
+    }
+
+    // Validate each company
+    const validatedCompanies = [];
+    for (const company of companies) {
+      const { error, value } = dataSchema.validate(company);
+      if (error) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid data: ${error.details[0].message}`
+        });
+      }
+      validatedCompanies.push({
+        ...value,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+    }
+
+    const result = await collection.insertMany(validatedCompanies);
+    
+    res.status(201).json({
+      success: true,
+      message: `${result.insertedCount} companies added successfully`,
+      insertedIds: result.insertedIds
+    });
+  } catch (err) {
+    console.error("❌ Bulk insert error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Bulk insert failed"
+    });
+  }
+});
+
+// ==================== ERROR HANDLING ====================
+app.use((req, res, next) => {
+  res.status(404).json({
+    success: false,
+    error: "Route not found"
+  });
+});
+
+app.use((err, req, res, next) => {
+  console.error("🔥 Server Error:", err);
+  res.status(500).json({
+    success: false,
+    error: "Internal server error",
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 
@@ -260,11 +407,21 @@ connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port: ${PORT}`);
     console.log(`🌐 CORS enabled for all origins`);
-    console.log(`📡 Test URL: http://localhost:${PORT}/test`);
+    console.log(`📡 API Base URL: http://localhost:${PORT}`);
+    console.log(`🔗 Health Check: http://localhost:${PORT}/`);
+    console.log(`📊 Test Endpoint: http://localhost:${PORT}/test`);
   });
 });
 
-// Handle errors
-process.on("unhandledRejection", (err) => {
-  console.error("❌ Unhandled rejection:", err);
+// Handle shutdown gracefully
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received. Closing connections...");
+  await client.close();
+  process.exit(0);
+});
+
+process.on("SIGINT", async () => {
+  console.log("SIGINT received. Closing connections...");
+  await client.close();
+  process.exit(0);
 });
